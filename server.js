@@ -367,6 +367,94 @@ function handleGitCommand(text) {
   return null;
 }
 
+// GitHub CLI連携
+function needsGitHub(text) {
+  const triggers = ['イシュー', 'issue', 'プルリク', 'PR', 'プルリクエスト', '通知', 'GitHub', 'ギットハブ'];
+  return triggers.some(t => text.toLowerCase().includes(t.toLowerCase()));
+}
+
+function getGitHubIssues(repo = null) {
+  try {
+    const repoFlag = repo ? `-R ${repo}` : '';
+    const result = execSync(
+      `gh issue list ${repoFlag} --limit 5 --json number,title,state --jq '.[] | "#\\(.number) \\(.title) [\\(.state)]"'`,
+      { encoding: 'utf-8', timeout: 10000 }
+    );
+    return result.trim().split('\n').filter(l => l);
+  } catch (e) {
+    return null;
+  }
+}
+
+function getGitHubPRs(repo = null) {
+  try {
+    const repoFlag = repo ? `-R ${repo}` : '';
+    const result = execSync(
+      `gh pr list ${repoFlag} --limit 5 --json number,title,state --jq '.[] | "#\\(.number) \\(.title) [\\(.state)]"'`,
+      { encoding: 'utf-8', timeout: 10000 }
+    );
+    return result.trim().split('\n').filter(l => l);
+  } catch (e) {
+    return null;
+  }
+}
+
+function getGitHubNotifications() {
+  try {
+    const result = execSync(
+      `gh api notifications --jq '.[:5] | .[] | "\\(.subject.type): \\(.subject.title)"'`,
+      { encoding: 'utf-8', timeout: 10000 }
+    );
+    return result.trim().split('\n').filter(l => l);
+  } catch (e) {
+    return null;
+  }
+}
+
+function handleGitHubCommand(text) {
+  // リポジトリ指定の抽出（例: "hide3tu/kana-chat"）
+  const repoMatch = text.match(/([a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+)/);
+  const repo = repoMatch ? repoMatch[1] : null;
+
+  // 通知
+  if (text.includes('通知')) {
+    const notifications = getGitHubNotifications();
+    if (!notifications || notifications.length === 0) {
+      return { display: 'GitHubの通知はありません', speak: 'ギットハブの通知はないですよ！' };
+    }
+    return {
+      display: `GitHub通知:\n${notifications.join('\n')}`,
+      speak: `ギットハブの通知が${notifications.length}件ありますね！`
+    };
+  }
+
+  // プルリクエスト
+  if (['プルリク', 'PR', 'プルリクエスト'].some(t => text.includes(t))) {
+    const prs = getGitHubPRs(repo);
+    if (!prs || prs.length === 0) {
+      return { display: 'オープンなPRはありません', speak: 'オープンなプルリクエストはないですよ！' };
+    }
+    return {
+      display: `プルリクエスト:\n${prs.join('\n')}`,
+      speak: `プルリクエストが${prs.length}件ありますね！`
+    };
+  }
+
+  // イシュー
+  if (['イシュー', 'issue'].some(t => text.toLowerCase().includes(t.toLowerCase()))) {
+    const issues = getGitHubIssues(repo);
+    if (!issues || issues.length === 0) {
+      return { display: 'オープンなイシューはありません', speak: 'オープンなイシューはないですよ！' };
+    }
+    return {
+      display: `イシュー:\n${issues.join('\n')}`,
+      speak: `イシューが${issues.length}件ありますね！`
+    };
+  }
+
+  return null;
+}
+
 // Google Calendar連携
 let calendarAuth = null;
 
@@ -621,7 +709,21 @@ app.post('/chat', async (req, res) => {
         speak = parsed.speak;
       }
     }
-    // 4. カレンダー判定
+    // 4. GitHub判定
+    else if (needsGitHub(message)) {
+      console.log('Using GitHub CLI...');
+      const ghResponse = handleGitHubCommand(message);
+      if (ghResponse) {
+        display = ghResponse.display;
+        speak = ghResponse.speak;
+      } else {
+        responseText = await callGemini(message);
+        const parsed = parseResponse(responseText);
+        display = parsed.display;
+        speak = parsed.speak;
+      }
+    }
+    // 5. カレンダー判定
     else if (needsCalendar(message)) {
       console.log('Using Calendar...');
       const calendarResponse = await handleCalendarCommand(message);

@@ -13,6 +13,7 @@
 - **スマートホーム**: SwitchBot API（照明、テレビ、温湿度等）
 - **カレンダー**: Google Calendar API
 - **Git連携**: コミット履歴確認
+- **GitHub連携**: イシュー・PR・通知確認（GitHub CLI）
 - **会話履歴**: SQLite
 
 ## セットアップ
@@ -154,6 +155,25 @@ codex login status
 
 ---
 
+### GitHub CLI（任意）
+
+GitHub のイシュー・プルリクエスト・通知の確認で使用。
+
+```bash
+# インストール（Homebrew）
+brew install gh
+
+# ログイン（ブラウザ認証）
+gh auth login
+```
+
+**確認:**
+```bash
+gh auth status
+```
+
+---
+
 ## 起動
 
 ```bash
@@ -179,6 +199,8 @@ npm start
 | 「電気つけて」 | SwitchBot |
 | 「温度教えて」 | SwitchBot温湿度計 |
 | 「コミット履歴見せて」 | Git |
+| 「イシュー見せて」 | GitHub CLI |
+| 「PRある？」 | GitHub CLI |
 | 「クロード、このエラー直して」 | Claude CLI |
 
 ## ファイル構成
