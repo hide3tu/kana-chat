@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kana Chat</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .container {
+      display: flex;
+      gap: 30px;
+      max-width: 1200px;
+      width: 95%;
+      padding: 20px;
+    }
+
+    .character-area {
+      flex: 0 0 400px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .character-image {
+      max-width: 100%;
+      height: auto;
+      filter: drop-shadow(0 10px 20px rgba(0,0,0,0.3));
+    }
+
+    .status-indicator {
+      margin-top: 20px;
+      padding: 10px 25px;
+      border-radius: 25px;
+      font-size: 16px;
+      font-weight: bold;
+      color: white;
+      transition: all 0.3s ease;
+    }
+
+    .status-waiting {
+      background: #6b7280;
+    }
+
+    .status-listening {
+      background: #10b981;
+      animation: pulse 1.5s infinite;
+    }
+
+    .status-speaking {
+      background: #f59e0b;
+    }
+
+    .status-thinking {
+      background: #8b5cf6;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    .chat-area {
+      flex: 1;
+      background: white;
+      border-radius: 20px;
+      padding: 25px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      max-height: 80vh;
+    }
+
+    .chat-header {
+      text-align: center;
+      padding-bottom: 15px;
+      border-bottom: 2px solid #eee;
+      margin-bottom: 20px;
+    }
+
+    .chat-header h1 {
+      color: #764ba2;
+      font-size: 24px;
+    }
+
+    .chat-header p {
+      color: #888;
+      font-size: 14px;
+      margin-top: 5px;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .message {
+      max-width: 85%;
+      padding: 12px 18px;
+      border-radius: 18px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .message-user {
+      align-self: flex-end;
+      background: #667eea;
+      color: white;
+    }
+
+    .message-kana {
+      align-self: flex-start;
+      background: #f3f4f6;
+      color: #333;
+    }
+
+    .input-area {
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+      padding-top: 15px;
+      border-top: 2px solid #eee;
+    }
+
+    .input-area input {
+      flex: 1;
+      padding: 12px 18px;
+      border: 2px solid #ddd;
+      border-radius: 25px;
+      font-size: 16px;
+      outline: none;
+      transition: border-color 0.3s;
+    }
+
+    .input-area input:focus {
+      border-color: #667eea;
+    }
+
+    .input-area button {
+      padding: 12px 25px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 25px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .input-area button:hover {
+      background: #5a67d8;
+    }
+
+    .mic-button {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      padding: 0;
+    }
+
+    .mic-button.active {
+      background: #ef4444;
+      animation: pulse 1s infinite;
+    }
+
+    .hint {
+      text-align: center;
+      color: #888;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="character-area">
+      <img src="kana.png" alt="かなちゃん" class="character-image">
+      <div id="status" class="status-indicator status-waiting">待機中</div>
+    </div>
+
+    <div class="chat-area">
+      <div class="chat-header">
+        <h1>Kana Chat</h1>
+        <p>「かな」と呼びかけると会話が始まります</p>
+      </div>
+
+      <div id="messages" class="chat-messages">
+        <!-- Messages will be added here -->
+      </div>
+
+      <div class="input-area">
+        <input type="text" id="textInput" placeholder="テキストで入力もできます...">
+        <button id="sendButton">送信</button>
+        <button id="micButton" class="mic-button">🎤</button>
+      </div>
+
+      <p class="hint">マイクボタンで音声認識開始 / 「かな」で会話モード開始</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

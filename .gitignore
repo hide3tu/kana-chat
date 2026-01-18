@@ -1,0 +1,5 @@
+node_modules/
+.env
+conversations.db
+token.json
+credentials.json
