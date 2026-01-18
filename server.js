@@ -108,14 +108,15 @@ async function executeDeviceCommand(deviceId, command, parameter = 'default') {
 
 // SwitchBot判定
 function needsSwitchBot(text) {
+  const lower = text.toLowerCase();
   const triggers = [
     '電気', '照明', 'ライト', '灯り',
-    'テレビ', 'TV', 'モニタ',
-    'PC電源', 'パソコン',
-    '温度', '湿度', '室温', 'CO2', '二酸化炭素',
+    'テレビ', 'tv', 'モニタ',
+    'pc電源', 'パソコン',
+    '温度', '湿度', '室温', 'co2', '二酸化炭素',
     'つけて', '消して', 'オン', 'オフ'
   ];
-  return triggers.some(t => text.includes(t));
+  return triggers.some(t => lower.includes(t));
 }
 
 // デバイス操作定義
@@ -128,8 +129,9 @@ const DEVICE_CONTROLS = [
 
 async function handleSwitchBotCommand(text) {
   try {
+    const lower = text.toLowerCase();
     // 温度・湿度・CO2の問い合わせ
-    if (['温度', '湿度', '室温', 'CO2', '二酸化炭素', '何度'].some(t => text.includes(t))) {
+    if (['温度', '湿度', '室温', 'co2', '二酸化炭素', '何度'].some(t => lower.includes(t))) {
       const data = await getSensorData();
       if (data) {
         return {
@@ -373,24 +375,11 @@ function needsGitHub(text) {
   return triggers.some(t => text.toLowerCase().includes(t.toLowerCase()));
 }
 
-function getGitHubIssues(repo = null) {
+function getGitHubList(type, repo = null) {
   try {
     const repoFlag = repo ? `-R ${repo}` : '';
     const result = execSync(
-      `gh issue list ${repoFlag} --limit 5 --json number,title,state --jq '.[] | "#\\(.number) \\(.title) [\\(.state)]"'`,
-      { encoding: 'utf-8', timeout: 10000 }
-    );
-    return result.trim().split('\n').filter(l => l);
-  } catch (e) {
-    return null;
-  }
-}
-
-function getGitHubPRs(repo = null) {
-  try {
-    const repoFlag = repo ? `-R ${repo}` : '';
-    const result = execSync(
-      `gh pr list ${repoFlag} --limit 5 --json number,title,state --jq '.[] | "#\\(.number) \\(.title) [\\(.state)]"'`,
+      `gh ${type} list ${repoFlag} --limit 5 --json number,title,state --jq '.[] | "#\\(.number) \\(.title) [\\(.state)]"'`,
       { encoding: 'utf-8', timeout: 10000 }
     );
     return result.trim().split('\n').filter(l => l);
@@ -430,7 +419,7 @@ function handleGitHubCommand(text) {
 
   // プルリクエスト
   if (['プルリク', 'PR', 'プルリクエスト'].some(t => text.includes(t))) {
-    const prs = getGitHubPRs(repo);
+    const prs = getGitHubList('pr', repo);
     if (!prs || prs.length === 0) {
       return { display: 'オープンなPRはありません', speak: 'オープンなプルリクエストはないですよ！' };
     }
@@ -442,7 +431,7 @@ function handleGitHubCommand(text) {
 
   // イシュー
   if (['イシュー', 'issue'].some(t => text.toLowerCase().includes(t.toLowerCase()))) {
-    const issues = getGitHubIssues(repo);
+    const issues = getGitHubList('issue', repo);
     if (!issues || issues.length === 0) {
       return { display: 'オープンなイシューはありません', speak: 'オープンなイシューはないですよ！' };
     }
@@ -493,14 +482,12 @@ function needsCalendar(text) {
   return triggers.some(t => text.includes(t));
 }
 
-async function getCalendarEvents(dayOffset = 0) {
+async function getCalendarEvents(targetDate = null) {
   if (!calendarAuth) return null;
 
   const calendar = google.calendar({ version: 'v3', auth: calendarAuth });
-  const start = new Date();
-  start.setDate(start.getDate() + dayOffset);
-  if (dayOffset > 0) start.setHours(0, 0, 0, 0);
-
+  const start = targetDate ? new Date(targetDate) : new Date();
+  start.setHours(targetDate ? 0 : start.getHours(), targetDate ? 0 : start.getMinutes(), 0, 0);
   const end = new Date(start);
   end.setHours(23, 59, 59);
 
@@ -511,7 +498,6 @@ async function getCalendarEvents(dayOffset = 0) {
     singleEvents: true,
     orderBy: 'startTime',
   });
-
   return res.data.items || [];
 }
 
@@ -521,44 +507,10 @@ function formatEventTime(event) {
   return d.getMinutes() > 0 ? `${d.getHours()}時${d.getMinutes()}分` : `${d.getHours()}時`;
 }
 
-// 日付パース（「1月30日」「2/15」などから Date を取得）
 function parseDateFromText(text) {
-  const now = new Date();
-  const year = now.getFullYear();
-
-  // 「X月Y日」形式
-  const match1 = text.match(/(\d{1,2})月(\d{1,2})日/);
-  if (match1) {
-    return new Date(year, parseInt(match1[1]) - 1, parseInt(match1[2]));
-  }
-
-  // 「X/Y」形式
-  const match2 = text.match(/(\d{1,2})\/(\d{1,2})/);
-  if (match2) {
-    return new Date(year, parseInt(match2[1]) - 1, parseInt(match2[2]));
-  }
-
-  return null;
-}
-
-async function getCalendarEventsForDate(targetDate) {
-  if (!calendarAuth) return null;
-
-  const calendar = google.calendar({ version: 'v3', auth: calendarAuth });
-  const start = new Date(targetDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(targetDate);
-  end.setHours(23, 59, 59);
-
-  const res = await calendar.events.list({
-    calendarId: 'primary',
-    timeMin: start.toISOString(),
-    timeMax: end.toISOString(),
-    singleEvents: true,
-    orderBy: 'startTime',
-  });
-
-  return res.data.items || [];
+  const year = new Date().getFullYear();
+  const match = text.match(/(\d{1,2})[月\/](\d{1,2})日?/);
+  return match ? new Date(year, parseInt(match[1]) - 1, parseInt(match[2])) : null;
 }
 
 async function handleCalendarCommand(text) {
@@ -572,19 +524,18 @@ async function handleCalendarCommand(text) {
   try {
     let dayLabel, events;
 
-    // 具体的な日付をパース
     const specificDate = parseDateFromText(text);
     if (specificDate) {
-      const m = specificDate.getMonth() + 1;
-      const d = specificDate.getDate();
-      dayLabel = `${m}月${d}日`;
-      events = await getCalendarEventsForDate(specificDate);
+      dayLabel = `${specificDate.getMonth() + 1}月${specificDate.getDate()}日`;
+      events = await getCalendarEvents(specificDate);
     } else if (text.includes('明日')) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
       dayLabel = '明日';
-      events = await getCalendarEvents(1);
+      events = await getCalendarEvents(tomorrow);
     } else {
       dayLabel = '今日';
-      events = await getCalendarEvents(0);
+      events = await getCalendarEvents();
     }
 
     if (events.length === 0) {
@@ -730,7 +681,7 @@ app.post('/chat', async (req, res) => {
       display = calendarResponse.display;
       speak = calendarResponse.speak;
     }
-    // 5. Claude判定
+    // 6. Claude判定
     else if (shouldUseClaude(message)) {
       console.log('Using Claude CLI...');
       const claudeResponse = await callClaudeCLI(message);
@@ -742,7 +693,7 @@ app.post('/chat', async (req, res) => {
       display = parsed.display;
       speak = parsed.speak;
     }
-    // 6. 検索判定
+    // 7. 検索判定
     else if (needsSearch(message)) {
       console.log('Using Gemini with Search...');
       responseText = await callGemini(message, true);
@@ -750,7 +701,7 @@ app.post('/chat', async (req, res) => {
       display = parsed.display;
       speak = parsed.speak;
     }
-    // 4. 通常のGemini
+    // 8. 通常のGemini
     else {
       console.log('Using Gemini...');
       responseText = await callGemini(message);

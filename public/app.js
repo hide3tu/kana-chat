@@ -231,9 +231,6 @@ function resetConversationTimer() {
 
 function resetSilenceTimer() {
   clearTimeout(silenceTimeout);
-  silenceTimeout = setTimeout(() => {
-    // 発話完了と判定（何もしない、onresultで処理済み）
-  }, SPEECH_END_DELAY);
 }
 
 // 会話終了
@@ -242,15 +239,13 @@ function endConversation() {
   isConversationMode = false;
   clearTimeout(conversationTimer);
 
-  setStatus('「かな」と呼んでね', 'listening');
-  // マイクはアクティブのまま（ウェイクワード待ち継続）
-
-  // ウェイクワード待ちに戻る（認識は継続）
-  if (!isListening) {
-    startListening();
+  if (micEnabled) {
+    setStatus('「かな」と呼んでね', 'listening');
+    if (!isListening) startListening();
+  } else {
+    setStatus('マイクボタンを押して開始', 'waiting');
   }
 
-  // 会話リセットをサーバーに通知
   fetch('/reset', { method: 'POST' });
 }
 
