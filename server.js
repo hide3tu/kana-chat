@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const crypto = require('crypto');
+const { google } = require('googleapis');
 
 const app = express();
 const PORT = 3000;
@@ -368,6 +369,213 @@ async function callClaudeCLI(message) {
   }
 }
 
+// Codex CLI呼び出し
+async function callCodexCLI(code) {
+  try {
+    const prompt = `以下のコードをレビューしてください：\n\n${code}`;
+    const result = execSync(
+      `codex -p "${prompt.replace(/"/g, '\\"')}"`,
+      { encoding: 'utf-8', timeout: 180000 }
+    );
+    return result;
+  } catch (error) {
+    console.error('Codex CLI error:', error);
+    return 'コーデックスに聞けなかったみたいです…';
+  }
+}
+
+// Git連携
+const PROJECT_DIR = process.env.PROJECT_DIR || process.cwd();
+
+function needsGit(text) {
+  const triggers = ['コミット', 'ログ', '履歴', 'git', '進捗', 'プッシュ'];
+  return triggers.some(t => text.toLowerCase().includes(t.toLowerCase()));
+}
+
+function getGitLog(count = 5) {
+  try {
+    const log = execSync(
+      `git log --oneline -${count}`,
+      { encoding: 'utf-8', cwd: PROJECT_DIR }
+    );
+    return log.trim().split('\n');
+  } catch (e) {
+    return null;
+  }
+}
+
+function getTodayCommits() {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const log = execSync(
+      `git log --oneline --since="${today} 00:00:00"`,
+      { encoding: 'utf-8', cwd: PROJECT_DIR }
+    );
+    return log.trim().split('\n').filter(l => l);
+  } catch (e) {
+    return [];
+  }
+}
+
+function handleGitCommand(text) {
+  // 今日のコミット
+  if (text.includes('今日') && (text.includes('コミット') || text.includes('進捗'))) {
+    const commits = getTodayCommits();
+    if (commits.length === 0) {
+      return { display: '今日のコミットはまだないですね', speak: '今日のコミットはまだないですね' };
+    }
+    const list = commits.join('\n');
+    return {
+      display: `今日のコミット（${commits.length}件）:\n${list}`,
+      speak: `今日は${commits.length}件コミットされてますね！`
+    };
+  }
+
+  // 直近のコミット
+  if (text.includes('コミット') || text.includes('履歴') || text.includes('ログ')) {
+    const logs = getGitLog(5);
+    if (!logs) {
+      return { display: 'Gitリポジトリが見つかりません', speak: 'ギットリポジトリが見つからないみたいです' };
+    }
+    const list = logs.join('\n');
+    return {
+      display: `直近のコミット:\n${list}`,
+      speak: `直近5件のコミット、画面に出しましたよ！`
+    };
+  }
+
+  return null;
+}
+
+// Google Calendar連携
+let calendarAuth = null;
+
+function initCalendarAuth() {
+  try {
+    const credentialsPath = path.join(__dirname, 'credentials.json');
+    const tokenPath = path.join(__dirname, 'token.json');
+
+    if (!fs.existsSync(credentialsPath) || !fs.existsSync(tokenPath)) {
+      console.log('Calendar: credentials.json または token.json がありません');
+      return null;
+    }
+
+    const credentials = JSON.parse(fs.readFileSync(credentialsPath));
+    const token = JSON.parse(fs.readFileSync(tokenPath));
+    const { client_secret, client_id } = credentials.installed || credentials.web;
+
+    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret);
+    oAuth2Client.setCredentials(token);
+
+    console.log('Calendar: 認証OK');
+    return oAuth2Client;
+  } catch (error) {
+    console.error('Calendar auth error:', error);
+    return null;
+  }
+}
+
+// 起動時に認証
+calendarAuth = initCalendarAuth();
+
+function needsCalendar(text) {
+  const triggers = ['予定', 'スケジュール', 'カレンダー'];
+  const excludes = ['天気', '気温', 'ニュース'];
+  if (excludes.some(e => text.includes(e))) return false;
+  return triggers.some(t => text.includes(t));
+}
+
+async function getTodayEvents() {
+  if (!calendarAuth) return null;
+
+  const calendar = google.calendar({ version: 'v3', auth: calendarAuth });
+  const now = new Date();
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59);
+
+  const res = await calendar.events.list({
+    calendarId: 'primary',
+    timeMin: now.toISOString(),
+    timeMax: endOfDay.toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+  });
+
+  return res.data.items || [];
+}
+
+async function getTomorrowEvents() {
+  if (!calendarAuth) return null;
+
+  const calendar = google.calendar({ version: 'v3', auth: calendarAuth });
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+
+  const endOfTomorrow = new Date(tomorrow);
+  endOfTomorrow.setHours(23, 59, 59);
+
+  const res = await calendar.events.list({
+    calendarId: 'primary',
+    timeMin: tomorrow.toISOString(),
+    timeMax: endOfTomorrow.toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+  });
+
+  return res.data.items || [];
+}
+
+function formatEventTime(event) {
+  if (event.start.dateTime) {
+    const date = new Date(event.start.dateTime);
+    return `${date.getHours()}時${date.getMinutes() > 0 ? date.getMinutes() + '分' : ''}`;
+  }
+  return '終日';
+}
+
+async function handleCalendarCommand(text) {
+  if (!calendarAuth) {
+    return {
+      display: 'カレンダーが設定されていません',
+      speak: 'カレンダーがまだ設定されてないみたいです'
+    };
+  }
+
+  try {
+    // 明日の予定
+    if (text.includes('明日')) {
+      const events = await getTomorrowEvents();
+      if (events.length === 0) {
+        return { display: '明日の予定はありません', speak: '明日の予定はないですよ！' };
+      }
+      const list = events.map(e => `${formatEventTime(e)} ${e.summary}`).join('\n');
+      return {
+        display: `明日の予定:\n${list}`,
+        speak: `明日は${events.length}件の予定がありますね！`
+      };
+    }
+
+    // 今日の予定
+    const events = await getTodayEvents();
+    if (events.length === 0) {
+      return { display: '今日の予定はありません', speak: '今日の予定はもうないですよ！' };
+    }
+    const list = events.map(e => `${formatEventTime(e)} ${e.summary}`).join('\n');
+    return {
+      display: `今日の予定:\n${list}`,
+      speak: `今日は${events.length}件の予定がありますね！`
+    };
+
+  } catch (error) {
+    console.error('Calendar error:', error);
+    return {
+      display: 'カレンダー取得エラー',
+      speak: 'カレンダーの取得に失敗しちゃいました…'
+    };
+  }
+}
+
 // 過去会話検索
 function searchConversations(keyword) {
   const logs = db.prepare(`
@@ -448,7 +656,28 @@ app.post('/chat', async (req, res) => {
         speak = parsed.speak;
       }
     }
-    // 3. Claude判定
+    // 3. Git判定
+    else if (needsGit(message)) {
+      console.log('Using Git...');
+      const gitResponse = handleGitCommand(message);
+      if (gitResponse) {
+        display = gitResponse.display;
+        speak = gitResponse.speak;
+      } else {
+        responseText = await callGemini(message);
+        const parsed = parseResponse(responseText);
+        display = parsed.display;
+        speak = parsed.speak;
+      }
+    }
+    // 4. カレンダー判定
+    else if (needsCalendar(message)) {
+      console.log('Using Calendar...');
+      const calendarResponse = await handleCalendarCommand(message);
+      display = calendarResponse.display;
+      speak = calendarResponse.speak;
+    }
+    // 5. Claude判定
     else if (shouldUseClaude(message)) {
       console.log('Using Claude CLI...');
       const claudeResponse = await callClaudeCLI(message);

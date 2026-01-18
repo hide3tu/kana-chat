@@ -199,9 +199,24 @@ function playAudio(base64Audio) {
 function addMessage(text, type) {
   const messageEl = document.createElement('div');
   messageEl.className = `message message-${type}`;
-  messageEl.textContent = text;
   messagesEl.appendChild(messageEl);
+
+  // かなの返答はタイプライター表示
+  if (type === 'kana') {
+    typeWriter(messageEl, text, 0);
+  } else {
+    messageEl.textContent = text;
+  }
   messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// タイプライター効果
+function typeWriter(element, text, index) {
+  if (index < text.length) {
+    element.textContent += text.charAt(index);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    setTimeout(() => typeWriter(element, text, index + 1), 30);
+  }
 }
 
 // ステータス表示
