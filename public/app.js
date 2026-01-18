@@ -140,8 +140,8 @@ async function sendMessage(text) {
     addMessage('ごめんなさい、エラーが発生しちゃいました...', 'kana');
   }
 
-  // 会話モード中なら聞き取り再開
-  if (isConversationMode && !isSpeaking) {
+  // マイク有効かつ会話モード中なら聞き取り再開
+  if (micEnabled && isConversationMode && !isSpeaking) {
     setStatus('聞いています...', 'listening');
   }
 }
@@ -162,8 +162,12 @@ function playAudio(base64Audio) {
     audio.onended = () => {
       isSpeaking = false;
       setTimeout(() => {
-        startListening();
-        setStatus(isConversationMode ? '聞いています...' : '「かな」と呼んでね', 'listening');
+        if (micEnabled) {
+          startListening();
+          setStatus(isConversationMode ? '聞いています...' : '「かな」と呼んでね', 'listening');
+        } else {
+          setStatus('マイクボタンを押して開始', 'waiting');
+        }
         resolve();
       }, POST_SPEECH_DELAY);
     };
