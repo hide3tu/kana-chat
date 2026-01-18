@@ -118,72 +118,47 @@ function needsSwitchBot(text) {
   return triggers.some(t => text.includes(t));
 }
 
-// SwitchBotコマンド処理
+// デバイス操作定義
+const DEVICE_CONTROLS = [
+  { keywords: ['電気', '照明', 'ライト', '灯り'], device: '灯り', name: '照明', speakName: '' },
+  { keywords: ['テレビ', 'TV'], device: 'テレビ', name: 'テレビ', speakName: 'テレビ' },
+  { keywords: ['モニタ', 'LG'], device: 'モニタ', name: 'モニタ', speakName: 'モニタ' },
+  { keywords: ['PC電源', 'パソコン'], device: 'PC電源', name: 'PC電源', speakName: 'ピーシー電源' }
+];
+
 async function handleSwitchBotCommand(text) {
   try {
     // 温度・湿度・CO2の問い合わせ
     if (['温度', '湿度', '室温', 'CO2', '二酸化炭素', '何度'].some(t => text.includes(t))) {
       const data = await getSensorData();
       if (data) {
-        const temp = data.temperature;
-        const hum = data.humidity;
-        const co2 = data.co2;
         return {
-          display: `温度: ${temp}℃ / 湿度: ${hum}% / CO2: ${co2}ppm`,
-          speak: `今${temp}度で、湿度は${hum}パーセント、CO2は${co2}ピーピーエムですね！`
+          display: `温度: ${data.temperature}℃ / 湿度: ${data.humidity}% / CO2: ${data.co2}ppm`,
+          speak: `今${data.temperature}度で、湿度は${data.humidity}パーセント、CO2は${data.co2}ピーピーエムですね！`
         };
       }
     }
 
-    // 照明操作
-    if (['電気', '照明', 'ライト', '灯り'].some(t => text.includes(t))) {
-      const device = SWITCHBOT_DEVICES['灯り'];
-      if (text.includes('つけて') || text.includes('オン')) {
-        await executeDeviceCommand(device.id, 'turnOn');
-        return { display: '照明をつけました！', speak: 'はーい、つけましたよ！' };
-      } else if (text.includes('消して') || text.includes('オフ')) {
-        await executeDeviceCommand(device.id, 'turnOff');
-        return { display: '照明を消しました！', speak: 'はーい、消しましたよ！' };
+    // デバイス操作（共通処理）
+    for (const ctrl of DEVICE_CONTROLS) {
+      if (ctrl.keywords.some(k => text.includes(k))) {
+        const device = SWITCHBOT_DEVICES[ctrl.device];
+        const isOn = text.includes('つけて') || text.includes('オン');
+        const isOff = text.includes('消して') || text.includes('オフ');
+
+        if (isOn || isOff) {
+          await executeDeviceCommand(device.id, isOn ? 'turnOn' : 'turnOff');
+          const action = isOn ? 'つけ' : '消し';
+          const suffix = ctrl.speakName ? ctrl.speakName : '';
+          return {
+            display: `${ctrl.name}を${action}ました！`,
+            speak: `はーい、${suffix}${action}ましたよ！`
+          };
+        }
       }
     }
 
-    // テレビ操作
-    if (['テレビ', 'TV'].some(t => text.includes(t))) {
-      const device = SWITCHBOT_DEVICES['テレビ'];
-      if (text.includes('つけて') || text.includes('オン')) {
-        await executeDeviceCommand(device.id, 'turnOn');
-        return { display: 'テレビをつけました！', speak: 'はーい、テレビつけましたよ！' };
-      } else if (text.includes('消して') || text.includes('オフ')) {
-        await executeDeviceCommand(device.id, 'turnOff');
-        return { display: 'テレビを消しました！', speak: 'はーい、テレビ消しましたよ！' };
-      }
-    }
-
-    // モニタ操作
-    if (['モニタ', 'LG'].some(t => text.includes(t))) {
-      const device = SWITCHBOT_DEVICES['モニタ'];
-      if (text.includes('つけて') || text.includes('オン')) {
-        await executeDeviceCommand(device.id, 'turnOn');
-        return { display: 'モニタをつけました！', speak: 'はーい、モニタつけましたよ！' };
-      } else if (text.includes('消して') || text.includes('オフ')) {
-        await executeDeviceCommand(device.id, 'turnOff');
-        return { display: 'モニタを消しました！', speak: 'はーい、モニタ消しましたよ！' };
-      }
-    }
-
-    // PC電源操作
-    if (['PC電源', 'パソコン'].some(t => text.includes(t))) {
-      const device = SWITCHBOT_DEVICES['PC電源'];
-      if (text.includes('つけて') || text.includes('オン')) {
-        await executeDeviceCommand(device.id, 'turnOn');
-        return { display: 'PC電源をONにしました！', speak: 'はーい、ピーシー電源オンにしましたよ！' };
-      } else if (text.includes('消して') || text.includes('オフ')) {
-        await executeDeviceCommand(device.id, 'turnOff');
-        return { display: 'PC電源をOFFにしました！', speak: 'はーい、ピーシー電源オフにしましたよ！' };
-      }
-    }
-
-    return null; // 該当なし
+    return null;
   } catch (error) {
     console.error('SwitchBot error:', error);
     return {
@@ -197,34 +172,22 @@ async function handleSwitchBotCommand(text) {
 function getLocalResponse(text) {
   const now = new Date();
 
-  // 時刻
   if (['何時', '今何時', '時間教えて'].some(t => text.includes(t))) {
-    const hour = now.getHours();
-    const minute = now.getMinutes();
-    const timeDisplay = `${hour}:${minute.toString().padStart(2, '0')}`;
-    const timeSpeak = `${hour}時${minute}分`;
+    const h = now.getHours();
+    const m = now.getMinutes();
     return {
-      display: `今は${timeDisplay}ですよ！`,
-      speak: `今は${timeSpeak}ですよ！`
+      display: `今は${h}:${String(m).padStart(2, '0')}ですよ！`,
+      speak: `今は${h}時${m}分ですよ！`
     };
   }
 
-  // 日付・曜日
   if (['何曜', '何日', '今日何日', '今日は何'].some(t => text.includes(t))) {
     const date = now.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'long' });
-    return {
-      display: `今日は${date}ですね！`,
-      speak: `今日は${date}ですね！`
-    };
+    return { display: `今日は${date}ですね！`, speak: `今日は${date}ですね！` };
   }
 
-  // 年
   if (['何年', '今年は'].some(t => text.includes(t))) {
-    const year = now.getFullYear();
-    return {
-      display: `${year}年ですよ！`,
-      speak: `${year}年ですよ！`
-    };
+    return { display: `${now.getFullYear()}年ですよ！`, speak: `${now.getFullYear()}年ですよ！` };
   }
 
   return null;
@@ -278,77 +241,34 @@ async function synthesize(text) {
   }
 }
 
-// Gemini API呼び出し（通常）
-async function callGemini(message) {
-  // 直近MAX_HISTORY件のみ使用
+// Gemini API呼び出し
+async function callGemini(message, useSearch = false) {
   const recentHistory = conversationHistory.slice(-MAX_HISTORY);
   const contents = recentHistory.map(h => ({
     role: h.role === 'user' ? 'user' : 'model',
     parts: [{ text: h.content }]
   }));
+  contents.push({ role: 'user', parts: [{ text: message }] });
 
-  contents.push({
-    role: 'user',
-    parts: [{ text: message }]
-  });
-
-  const response = await fetch(GEMINI_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: contents
-    })
-  });
-
-  const data = await response.json();
-
-  // エラーチェック
-  if (data.error) {
-    console.error('Gemini API error:', data.error);
-    if (data.error.code === 429) {
-      throw new Error('RATE_LIMIT');
-    }
-    throw new Error(`API_ERROR: ${data.error.message}`);
+  const requestBody = {
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents
+  };
+  if (useSearch) {
+    requestBody.tools = [{ google_search: {} }];
   }
 
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-}
-
-// Gemini API呼び出し（検索付き）
-async function callGeminiWithSearch(message) {
-  // 直近MAX_HISTORY件のみ使用
-  const recentHistory = conversationHistory.slice(-MAX_HISTORY);
-  const contents = recentHistory.map(h => ({
-    role: h.role === 'user' ? 'user' : 'model',
-    parts: [{ text: h.content }]
-  }));
-
-  contents.push({
-    role: 'user',
-    parts: [{ text: message }]
-  });
-
   const response = await fetch(GEMINI_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: contents,
-      tools: [{
-        google_search: {}
-      }]
-    })
+    body: JSON.stringify(requestBody)
   });
 
   const data = await response.json();
 
-  // エラーチェック
   if (data.error) {
     console.error('Gemini API error:', data.error);
-    if (data.error.code === 429) {
-      throw new Error('RATE_LIMIT');
-    }
+    if (data.error.code === 429) throw new Error('RATE_LIMIT');
     throw new Error(`API_ERROR: ${data.error.message}`);
   }
 
@@ -485,40 +405,21 @@ function needsCalendar(text) {
   return triggers.some(t => text.includes(t));
 }
 
-async function getTodayEvents() {
+async function getCalendarEvents(dayOffset = 0) {
   if (!calendarAuth) return null;
 
   const calendar = google.calendar({ version: 'v3', auth: calendarAuth });
-  const now = new Date();
-  const endOfDay = new Date(now);
-  endOfDay.setHours(23, 59, 59);
+  const start = new Date();
+  start.setDate(start.getDate() + dayOffset);
+  if (dayOffset > 0) start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setHours(23, 59, 59);
 
   const res = await calendar.events.list({
     calendarId: 'primary',
-    timeMin: now.toISOString(),
-    timeMax: endOfDay.toISOString(),
-    singleEvents: true,
-    orderBy: 'startTime',
-  });
-
-  return res.data.items || [];
-}
-
-async function getTomorrowEvents() {
-  if (!calendarAuth) return null;
-
-  const calendar = google.calendar({ version: 'v3', auth: calendarAuth });
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(0, 0, 0, 0);
-
-  const endOfTomorrow = new Date(tomorrow);
-  endOfTomorrow.setHours(23, 59, 59);
-
-  const res = await calendar.events.list({
-    calendarId: 'primary',
-    timeMin: tomorrow.toISOString(),
-    timeMax: endOfTomorrow.toISOString(),
+    timeMin: start.toISOString(),
+    timeMax: end.toISOString(),
     singleEvents: true,
     orderBy: 'startTime',
   });
@@ -527,11 +428,49 @@ async function getTomorrowEvents() {
 }
 
 function formatEventTime(event) {
-  if (event.start.dateTime) {
-    const date = new Date(event.start.dateTime);
-    return `${date.getHours()}時${date.getMinutes() > 0 ? date.getMinutes() + '分' : ''}`;
+  if (!event.start.dateTime) return '終日';
+  const d = new Date(event.start.dateTime);
+  return d.getMinutes() > 0 ? `${d.getHours()}時${d.getMinutes()}分` : `${d.getHours()}時`;
+}
+
+// 日付パース（「1月30日」「2/15」などから Date を取得）
+function parseDateFromText(text) {
+  const now = new Date();
+  const year = now.getFullYear();
+
+  // 「X月Y日」形式
+  const match1 = text.match(/(\d{1,2})月(\d{1,2})日/);
+  if (match1) {
+    return new Date(year, parseInt(match1[1]) - 1, parseInt(match1[2]));
   }
-  return '終日';
+
+  // 「X/Y」形式
+  const match2 = text.match(/(\d{1,2})\/(\d{1,2})/);
+  if (match2) {
+    return new Date(year, parseInt(match2[1]) - 1, parseInt(match2[2]));
+  }
+
+  return null;
+}
+
+async function getCalendarEventsForDate(targetDate) {
+  if (!calendarAuth) return null;
+
+  const calendar = google.calendar({ version: 'v3', auth: calendarAuth });
+  const start = new Date(targetDate);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(targetDate);
+  end.setHours(23, 59, 59);
+
+  const res = await calendar.events.list({
+    calendarId: 'primary',
+    timeMin: start.toISOString(),
+    timeMax: end.toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+  });
+
+  return res.data.items || [];
 }
 
 async function handleCalendarCommand(text) {
@@ -543,30 +482,42 @@ async function handleCalendarCommand(text) {
   }
 
   try {
-    // 明日の予定
-    if (text.includes('明日')) {
-      const events = await getTomorrowEvents();
-      if (events.length === 0) {
-        return { display: '明日の予定はありません', speak: '明日の予定はないですよ！' };
-      }
-      const list = events.map(e => `${formatEventTime(e)} ${e.summary}`).join('\n');
-      return {
-        display: `明日の予定:\n${list}`,
-        speak: `明日は${events.length}件の予定がありますね！`
-      };
+    let dayLabel, events;
+
+    // 具体的な日付をパース
+    const specificDate = parseDateFromText(text);
+    if (specificDate) {
+      const m = specificDate.getMonth() + 1;
+      const d = specificDate.getDate();
+      dayLabel = `${m}月${d}日`;
+      events = await getCalendarEventsForDate(specificDate);
+    } else if (text.includes('明日')) {
+      dayLabel = '明日';
+      events = await getCalendarEvents(1);
+    } else {
+      dayLabel = '今日';
+      events = await getCalendarEvents(0);
     }
 
-    // 今日の予定
-    const events = await getTodayEvents();
     if (events.length === 0) {
-      return { display: '今日の予定はありません', speak: '今日の予定はもうないですよ！' };
+      return { display: `${dayLabel}の予定はありません`, speak: `${dayLabel}の予定はないですよ！` };
     }
-    const list = events.map(e => `${formatEventTime(e)} ${e.summary}`).join('\n');
-    return {
-      display: `今日の予定:\n${list}`,
-      speak: `今日は${events.length}件の予定がありますね！`
-    };
 
+    const list = events.map(e => `${formatEventTime(e)} ${e.summary}`).join('\n');
+
+    // 記念日・誕生日チェック
+    const celebrationKeywords = ['誕生日', '記念日', 'birthday', 'anniversary'];
+    const celebrations = events.filter(e =>
+      celebrationKeywords.some(k => e.summary.toLowerCase().includes(k.toLowerCase()))
+    );
+
+    let speak = `${dayLabel}は${events.length}件の予定がありますね！`;
+    if (celebrations.length > 0) {
+      const names = celebrations.map(e => e.summary).join('と');
+      speak += `あ、${names}ですね！おめでとうございます！`;
+    }
+
+    return { display: `${dayLabel}の予定:\n${list}`, speak };
   } catch (error) {
     console.error('Calendar error:', error);
     return {
@@ -689,10 +640,10 @@ app.post('/chat', async (req, res) => {
       display = parsed.display;
       speak = parsed.speak;
     }
-    // 4. 検索判定
+    // 6. 検索判定
     else if (needsSearch(message)) {
       console.log('Using Gemini with Search...');
-      responseText = await callGeminiWithSearch(message);
+      responseText = await callGemini(message, true);
       const parsed = parseResponse(responseText);
       display = parsed.display;
       speak = parsed.speak;

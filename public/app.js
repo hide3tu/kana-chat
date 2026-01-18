@@ -11,12 +11,12 @@ let isListening = false;
 let isSpeaking = false;
 let silenceTimeout = null;
 let recognition = null;
-let micEnabled = false; // マイク有効化フラグ（手動制御用）
+let micEnabled = false;
 
 // 設定
-const CONVERSATION_TIMEOUT = 30000; // 30秒無音で会話終了
-const SPEECH_END_DELAY = 1000; // 1秒無音で発話完了判定
-const POST_SPEECH_DELAY = 500; // 音声再生後の待機時間
+const CONVERSATION_TIMEOUT = 30000;
+const SPEECH_END_DELAY = 1000;
+const POST_SPEECH_DELAY = 500;
 
 // Web Speech API初期化
 function initSpeechRecognition() {
@@ -44,14 +44,8 @@ function initSpeechRecognition() {
   rec.onend = () => {
     console.log('Speech recognition ended');
     isListening = false;
-
-    // マイク有効かつ発話中でなければ再開
     if (micEnabled && !isSpeaking) {
-      setTimeout(() => {
-        if (micEnabled && !isSpeaking) {
-          startListening();
-        }
-      }, 100);
+      setTimeout(() => { if (micEnabled && !isSpeaking) startListening(); }, 100);
     }
   };
 
@@ -167,16 +161,9 @@ function playAudio(base64Audio) {
 
     audio.onended = () => {
       isSpeaking = false;
-
-      // 再生終了後、少し待ってから認識再開
       setTimeout(() => {
-        if (isConversationMode) {
-          startListening();
-          setStatus('聞いています...', 'listening');
-        } else {
-          setStatus('「かな」と呼んでね', 'listening');
-          startListening();
-        }
+        startListening();
+        setStatus(isConversationMode ? '聞いています...' : '「かな」と呼んでね', 'listening');
         resolve();
       }, POST_SPEECH_DELAY);
     };
@@ -289,34 +276,26 @@ function stopListening() {
 // イベントリスナー
 sendButton.addEventListener('click', () => {
   const text = textInput.value.trim();
-  if (text) {
-    // テキスト入力時も会話モードに
-    if (!isConversationMode) {
-      isConversationMode = true;
-    }
-    sendMessage(text);
-    textInput.value = '';
-    resetConversationTimer();
-  }
+  if (!text) return;
+  isConversationMode = true;
+  sendMessage(text);
+  textInput.value = '';
+  resetConversationTimer();
 });
 
 textInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') {
-    sendButton.click();
-  }
+  if (e.key === 'Enter') sendButton.click();
 });
 
 micButton.addEventListener('click', () => {
+  micEnabled = !micEnabled;
+  micButton.classList.toggle('active', micEnabled);
   if (micEnabled) {
-    micEnabled = false;
-    stopListening();
-    micButton.classList.remove('active');
-    setStatus('マイクボタンを押して開始', 'waiting');
-  } else {
-    micEnabled = true;
     startListening();
-    micButton.classList.add('active');
     setStatus('「かな」と呼んでね', 'listening');
+  } else {
+    stopListening();
+    setStatus('マイクボタンを押して開始', 'waiting');
   }
 });
 
