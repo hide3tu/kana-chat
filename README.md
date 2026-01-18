@@ -66,12 +66,23 @@ SWITCHBOT_TOKEN=2c8f7cf9dfb353...
 SWITCHBOT_SECRET=49e82789db506f2e...
 ```
 
-**対応デバイス（server.jsのSWITCHBOT_DEVICESで設定）:**
-- 温湿度計/CO2センサー
-- 照明（赤外線リモート）
-- テレビ（赤外線リモート）
-- モニタ（赤外線リモート）
-- プラグ
+**デバイスID取得:**
+
+```bash
+# デバイス一覧を取得（トークン設定後）
+curl -s -H "Authorization: $SWITCHBOT_TOKEN" \
+  https://api.switch-bot.com/v1.1/devices | jq
+```
+
+`.env`にデバイスIDを設定:
+```env
+SWITCHBOT_METER_ID=xxxxxxxxxxxx      # 温湿度計/CO2センサー
+SWITCHBOT_LIGHT_ID=02-xxx-xxx        # 照明（赤外線）
+SWITCHBOT_TV_ID=02-xxx-xxx           # テレビ（赤外線）
+SWITCHBOT_MONITOR_ID=02-xxx-xxx      # モニタ（赤外線）
+SWITCHBOT_PLUG_ID=xxxxxxxxxxxx       # スマートプラグ
+SWITCHBOT_DVD_ID=02-xxx-xxx          # DVDレコーダー（赤外線）
+```
 
 ---
 

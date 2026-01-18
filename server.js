@@ -49,18 +49,18 @@ const MAX_HISTORY = parseInt(process.env.MAX_HISTORY) || 20; // 直近N件のや
 const SWITCHBOT_TOKEN = process.env.SWITCHBOT_TOKEN;
 const SWITCHBOT_SECRET = process.env.SWITCHBOT_SECRET;
 
-// SwitchBotデバイスマッピング
+// SwitchBotデバイスマッピング（環境変数から取得）
 const SWITCHBOT_DEVICES = {
-  '温湿度計': { id: '***REMOVED***', type: 'meter' },
-  'CO2センサー': { id: '***REMOVED***', type: 'meter' },
-  'PC電源': { id: '***REMOVED***', type: 'plug' },
-  '灯り': { id: '***REMOVED***', type: 'light' },
-  '照明': { id: '***REMOVED***', type: 'light' },
-  '電気': { id: '***REMOVED***', type: 'light' },
-  'テレビ': { id: '***REMOVED***', type: 'tv' },
-  'BDレコーダー': { id: '***REMOVED***', type: 'dvd' },
-  'LGモニタ': { id: '***REMOVED***', type: 'monitor' },
-  'モニタ': { id: '***REMOVED***', type: 'monitor' }
+  '温湿度計': { id: process.env.SWITCHBOT_METER_ID, type: 'meter' },
+  'CO2センサー': { id: process.env.SWITCHBOT_METER_ID, type: 'meter' },
+  'PC電源': { id: process.env.SWITCHBOT_PLUG_ID, type: 'plug' },
+  '灯り': { id: process.env.SWITCHBOT_LIGHT_ID, type: 'light' },
+  '照明': { id: process.env.SWITCHBOT_LIGHT_ID, type: 'light' },
+  '電気': { id: process.env.SWITCHBOT_LIGHT_ID, type: 'light' },
+  'テレビ': { id: process.env.SWITCHBOT_TV_ID, type: 'tv' },
+  'BDレコーダー': { id: process.env.SWITCHBOT_DVD_ID, type: 'dvd' },
+  'LGモニタ': { id: process.env.SWITCHBOT_MONITOR_ID, type: 'monitor' },
+  'モニタ': { id: process.env.SWITCHBOT_MONITOR_ID, type: 'monitor' }
 };
 
 // SwitchBot API呼び出し
@@ -86,7 +86,7 @@ async function callSwitchBot(endpoint, method = 'GET', body = null) {
 
 // 温湿度・CO2取得
 async function getSensorData() {
-  const result = await callSwitchBot('devices/***REMOVED***/status');
+  const result = await callSwitchBot(`devices/${process.env.SWITCHBOT_METER_ID}/status`);
   if (result.statusCode === 100) {
     return {
       temperature: result.body.temperature,
