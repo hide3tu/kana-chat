@@ -4,6 +4,7 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = 3000;
@@ -40,16 +41,170 @@ const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemi
 const VOICEVOX_URL = 'http://localhost:50021';
 const VOICEVOX_SPEAKER = 8; // 春日部つむぎ
 
+// 会話履歴設定
+const MAX_HISTORY = parseInt(process.env.MAX_HISTORY) || 20; // 直近N件のやり取り
+
+// SwitchBot設定
+const SWITCHBOT_TOKEN = process.env.SWITCHBOT_TOKEN;
+const SWITCHBOT_SECRET = process.env.SWITCHBOT_SECRET;
+
+// SwitchBotデバイスマッピング
+const SWITCHBOT_DEVICES = {
+  '温湿度計': { id: '***REMOVED***', type: 'meter' },
+  'CO2センサー': { id: '***REMOVED***', type: 'meter' },
+  'PC電源': { id: '***REMOVED***', type: 'plug' },
+  '灯り': { id: '***REMOVED***', type: 'light' },
+  '照明': { id: '***REMOVED***', type: 'light' },
+  '電気': { id: '***REMOVED***', type: 'light' },
+  'テレビ': { id: '***REMOVED***', type: 'tv' },
+  'BDレコーダー': { id: '***REMOVED***', type: 'dvd' },
+  'LGモニタ': { id: '***REMOVED***', type: 'monitor' },
+  'モニタ': { id: '***REMOVED***', type: 'monitor' }
+};
+
+// SwitchBot API呼び出し
+async function callSwitchBot(endpoint, method = 'GET', body = null) {
+  const t = Date.now().toString();
+  const nonce = crypto.randomUUID();
+  const sign = crypto.createHmac('sha256', SWITCHBOT_SECRET)
+    .update(SWITCHBOT_TOKEN + t + nonce).digest('base64');
+
+  const response = await fetch(`https://api.switch-bot.com/v1.1/${endpoint}`, {
+    method,
+    headers: {
+      'Authorization': SWITCHBOT_TOKEN,
+      'sign': sign,
+      't': t,
+      'nonce': nonce,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : null
+  });
+  return response.json();
+}
+
+// 温湿度・CO2取得
+async function getSensorData() {
+  const result = await callSwitchBot('devices/***REMOVED***/status');
+  if (result.statusCode === 100) {
+    return {
+      temperature: result.body.temperature,
+      humidity: result.body.humidity,
+      co2: result.body.CO2
+    };
+  }
+  return null;
+}
+
+// デバイスコマンド実行
+async function executeDeviceCommand(deviceId, command, parameter = 'default') {
+  return callSwitchBot(`devices/${deviceId}/commands`, 'POST', {
+    command,
+    parameter,
+    commandType: 'command'
+  });
+}
+
+// SwitchBot判定
+function needsSwitchBot(text) {
+  const triggers = [
+    '電気', '照明', 'ライト', '灯り',
+    'テレビ', 'TV', 'モニタ',
+    'PC電源', 'パソコン',
+    '温度', '湿度', '室温', 'CO2', '二酸化炭素',
+    'つけて', '消して', 'オン', 'オフ'
+  ];
+  return triggers.some(t => text.includes(t));
+}
+
+// SwitchBotコマンド処理
+async function handleSwitchBotCommand(text) {
+  try {
+    // 温度・湿度・CO2の問い合わせ
+    if (['温度', '湿度', '室温', 'CO2', '二酸化炭素', '何度'].some(t => text.includes(t))) {
+      const data = await getSensorData();
+      if (data) {
+        const temp = data.temperature;
+        const hum = data.humidity;
+        const co2 = data.co2;
+        return {
+          display: `温度: ${temp}℃ / 湿度: ${hum}% / CO2: ${co2}ppm`,
+          speak: `今${temp}度で、湿度は${hum}パーセント、CO2は${co2}ピーピーエムですね！`
+        };
+      }
+    }
+
+    // 照明操作
+    if (['電気', '照明', 'ライト', '灯り'].some(t => text.includes(t))) {
+      const device = SWITCHBOT_DEVICES['灯り'];
+      if (text.includes('つけて') || text.includes('オン')) {
+        await executeDeviceCommand(device.id, 'turnOn');
+        return { display: '照明をつけました！', speak: 'はーい、つけましたよ！' };
+      } else if (text.includes('消して') || text.includes('オフ')) {
+        await executeDeviceCommand(device.id, 'turnOff');
+        return { display: '照明を消しました！', speak: 'はーい、消しましたよ！' };
+      }
+    }
+
+    // テレビ操作
+    if (['テレビ', 'TV'].some(t => text.includes(t))) {
+      const device = SWITCHBOT_DEVICES['テレビ'];
+      if (text.includes('つけて') || text.includes('オン')) {
+        await executeDeviceCommand(device.id, 'turnOn');
+        return { display: 'テレビをつけました！', speak: 'はーい、テレビつけましたよ！' };
+      } else if (text.includes('消して') || text.includes('オフ')) {
+        await executeDeviceCommand(device.id, 'turnOff');
+        return { display: 'テレビを消しました！', speak: 'はーい、テレビ消しましたよ！' };
+      }
+    }
+
+    // モニタ操作
+    if (['モニタ', 'LG'].some(t => text.includes(t))) {
+      const device = SWITCHBOT_DEVICES['モニタ'];
+      if (text.includes('つけて') || text.includes('オン')) {
+        await executeDeviceCommand(device.id, 'turnOn');
+        return { display: 'モニタをつけました！', speak: 'はーい、モニタつけましたよ！' };
+      } else if (text.includes('消して') || text.includes('オフ')) {
+        await executeDeviceCommand(device.id, 'turnOff');
+        return { display: 'モニタを消しました！', speak: 'はーい、モニタ消しましたよ！' };
+      }
+    }
+
+    // PC電源操作
+    if (['PC電源', 'パソコン'].some(t => text.includes(t))) {
+      const device = SWITCHBOT_DEVICES['PC電源'];
+      if (text.includes('つけて') || text.includes('オン')) {
+        await executeDeviceCommand(device.id, 'turnOn');
+        return { display: 'PC電源をONにしました！', speak: 'はーい、ピーシー電源オンにしましたよ！' };
+      } else if (text.includes('消して') || text.includes('オフ')) {
+        await executeDeviceCommand(device.id, 'turnOff');
+        return { display: 'PC電源をOFFにしました！', speak: 'はーい、ピーシー電源オフにしましたよ！' };
+      }
+    }
+
+    return null; // 該当なし
+  } catch (error) {
+    console.error('SwitchBot error:', error);
+    return {
+      display: `SwitchBotエラー: ${error.message}`,
+      speak: 'あれ、うまくいかなかったみたいです…'
+    };
+  }
+}
+
 // ローカル即答（API不要）
 function getLocalResponse(text) {
   const now = new Date();
 
   // 時刻
   if (['何時', '今何時', '時間教えて'].some(t => text.includes(t))) {
-    const time = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    const timeDisplay = `${hour}:${minute.toString().padStart(2, '0')}`;
+    const timeSpeak = `${hour}時${minute}分`;
     return {
-      display: `今は${time}ですよ！`,
-      speak: `今は${time}ですよ！`
+      display: `今は${timeDisplay}ですよ！`,
+      speak: `今は${timeSpeak}ですよ！`
     };
   }
 
@@ -104,6 +259,9 @@ async function synthesize(text) {
     });
     const query = await queryRes.json();
 
+    // 話速調整（1.0がデフォルト、1.2で少し速く）
+    query.speedScale = 1.2;
+
     // 音声合成
     const audioRes = await fetch(`${VOICEVOX_URL}/synthesis?speaker=${VOICEVOX_SPEAKER}`, {
       method: 'POST',
@@ -121,7 +279,9 @@ async function synthesize(text) {
 
 // Gemini API呼び出し（通常）
 async function callGemini(message) {
-  const contents = conversationHistory.map(h => ({
+  // 直近MAX_HISTORY件のみ使用
+  const recentHistory = conversationHistory.slice(-MAX_HISTORY);
+  const contents = recentHistory.map(h => ({
     role: h.role === 'user' ? 'user' : 'model',
     parts: [{ text: h.content }]
   }));
@@ -156,7 +316,9 @@ async function callGemini(message) {
 
 // Gemini API呼び出し（検索付き）
 async function callGeminiWithSearch(message) {
-  const contents = conversationHistory.map(h => ({
+  // 直近MAX_HISTORY件のみ使用
+  const recentHistory = conversationHistory.slice(-MAX_HISTORY);
+  const contents = recentHistory.map(h => ({
     role: h.role === 'user' ? 'user' : 'model',
     parts: [{ text: h.content }]
   }));
@@ -173,12 +335,7 @@ async function callGeminiWithSearch(message) {
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents: contents,
       tools: [{
-        google_search_retrieval: {
-          dynamic_retrieval_config: {
-            mode: "MODE_DYNAMIC",
-            dynamic_threshold: 0.3
-          }
-        }
+        google_search: {}
       }]
     })
   });
@@ -276,7 +433,22 @@ app.post('/chat', async (req, res) => {
       display = localResponse.display;
       speak = localResponse.speak;
     }
-    // 2. Claude判定
+    // 2. SwitchBot判定
+    else if (needsSwitchBot(message)) {
+      console.log('Using SwitchBot...');
+      const switchBotResponse = await handleSwitchBotCommand(message);
+      if (switchBotResponse) {
+        display = switchBotResponse.display;
+        speak = switchBotResponse.speak;
+      } else {
+        // SwitchBotで処理できなかった場合は通常のGeminiへ
+        responseText = await callGemini(message);
+        const parsed = parseResponse(responseText);
+        display = parsed.display;
+        speak = parsed.speak;
+      }
+    }
+    // 3. Claude判定
     else if (shouldUseClaude(message)) {
       console.log('Using Claude CLI...');
       const claudeResponse = await callClaudeCLI(message);
@@ -288,7 +460,7 @@ app.post('/chat', async (req, res) => {
       display = parsed.display;
       speak = parsed.speak;
     }
-    // 3. 検索判定
+    // 4. 検索判定
     else if (needsSearch(message)) {
       console.log('Using Gemini with Search...');
       responseText = await callGeminiWithSearch(message);

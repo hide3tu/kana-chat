@@ -11,6 +11,7 @@ let isListening = false;
 let isSpeaking = false;
 let silenceTimeout = null;
 let recognition = null;
+let micEnabled = false; // マイク有効化フラグ（手動制御用）
 
 // 設定
 const CONVERSATION_TIMEOUT = 30000; // 30秒無音で会話終了
@@ -44,10 +45,10 @@ function initSpeechRecognition() {
     console.log('Speech recognition ended');
     isListening = false;
 
-    // 会話モード中かつ発話中でなければ再開
-    if (isConversationMode && !isSpeaking) {
+    // マイク有効かつ発話中でなければ再開
+    if (micEnabled && !isSpeaking) {
       setTimeout(() => {
-        if (!isSpeaking && isConversationMode) {
+        if (micEnabled && !isSpeaking) {
           startListening();
         }
       }, 100);
@@ -97,14 +98,8 @@ function handleSpeechResult(text) {
       isConversationMode = true;
       setStatus('会話モード', 'listening');
 
-      // 「かな」以降のテキストがあれば処理
-      const afterWakeWord = text.split(/かな|カナ/).slice(1).join('').trim();
-      if (afterWakeWord) {
-        sendMessage(afterWakeWord);
-      } else {
-        // 挨拶を返す
-        sendMessage('かな');
-      }
+      // ウェイクワード含めてそのまま送信
+      sendMessage(text);
 
       resetConversationTimer();
       return;
@@ -179,7 +174,8 @@ function playAudio(base64Audio) {
           startListening();
           setStatus('聞いています...', 'listening');
         } else {
-          setStatus('待機中', 'waiting');
+          setStatus('「かな」と呼んでね', 'listening');
+          startListening();
         }
         resolve();
       }, POST_SPEECH_DELAY);
@@ -219,9 +215,12 @@ let conversationTimer = null;
 
 function resetConversationTimer() {
   clearTimeout(conversationTimer);
-  conversationTimer = setTimeout(() => {
-    endConversation();
-  }, CONVERSATION_TIMEOUT);
+  // 会話モード中のみタイムアウト設定
+  if (isConversationMode) {
+    conversationTimer = setTimeout(() => {
+      endConversation();
+    }, CONVERSATION_TIMEOUT);
+  }
 }
 
 function resetSilenceTimer() {
@@ -237,11 +236,13 @@ function endConversation() {
   isConversationMode = false;
   clearTimeout(conversationTimer);
 
-  if (recognition && isListening) {
-    recognition.stop();
-  }
+  setStatus('「かな」と呼んでね', 'listening');
+  // マイクはアクティブのまま（ウェイクワード待ち継続）
 
-  setStatus('待機中', 'waiting');
+  // ウェイクワード待ちに戻る（認識は継続）
+  if (!isListening) {
+    startListening();
+  }
 
   // 会話リセットをサーバーに通知
   fetch('/reset', { method: 'POST' });
@@ -291,24 +292,22 @@ textInput.addEventListener('keypress', (e) => {
 });
 
 micButton.addEventListener('click', () => {
-  if (isListening) {
+  if (micEnabled) {
+    micEnabled = false;
     stopListening();
     micButton.classList.remove('active');
-    if (!isConversationMode) {
-      setStatus('待機中', 'waiting');
-    }
+    setStatus('マイクボタンを押して開始', 'waiting');
   } else {
+    micEnabled = true;
     startListening();
     micButton.classList.add('active');
-    if (!isConversationMode) {
-      setStatus('「かな」と呼んでください', 'listening');
-    }
+    setStatus('「かな」と呼んでね', 'listening');
   }
 });
 
 // 初期化
 recognition = initSpeechRecognition();
-setStatus('待機中', 'waiting');
+setStatus('マイクボタンを押して開始', 'waiting');
 
 console.log('Kana Chat initialized');
 console.log('Say "かな" to start conversation');
