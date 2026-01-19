@@ -183,7 +183,7 @@ function getLocalResponse(text) {
     };
   }
 
-  if (['何曜', '何日', '今日何日', '今日は何'].some(t => text.includes(t))) {
+  if (['何曜日', '何日', '今日何日', '今日は何日', '今日は何曜'].some(t => text.includes(t))) {
     const date = now.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'long' });
     return { display: `今日は${date}ですね！`, speak: `今日は${date}ですね！` };
   }
@@ -211,9 +211,19 @@ function needsSearch(text) {
   const triggers = [
     '今日の', '明日の', '最新', '現在',
     '天気', 'ニュース', '調べて', '検索して',
-    '株価', '為替'
+    '株価', '為替', '探して', '教えて',
+    'について', 'とは', '何？', 'どう？'
   ];
   return triggers.some(t => text.includes(t));
+}
+
+// Geminiの返答が検索意図を示しているか判定
+function responseNeedsSearch(text) {
+  const patterns = [
+    '検索します', '調べます', '調べてみます', '探します',
+    '確認します', '探してみます', '調べてきます', '探してきます'
+  ];
+  return patterns.some(p => text.includes(p));
 }
 
 // VOICEVOX音声合成
@@ -274,7 +284,16 @@ async function callGemini(message, useSearch = false) {
     throw new Error(`API_ERROR: ${data.error.message}`);
   }
 
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  // 全partsのテキストを結合（検索時は複数partsが返る）
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const textParts = parts.filter(p => p.text).map(p => p.text);
+
+  if (useSearch) {
+    console.log(`Gemini response parts: ${parts.length}`);
+  }
+
+  // 最後のテキストpartを返す（検索結果を踏まえた回答）
+  return textParts[textParts.length - 1] || '';
 }
 
 // Claude CLI呼び出し
@@ -697,6 +716,8 @@ app.post('/chat', async (req, res) => {
     else if (needsSearch(message)) {
       console.log('Using Gemini with Search...');
       responseText = await callGemini(message, true);
+      // <search>タグが残っていたら除去
+      responseText = responseText.replace(/<search>.+?<\/search>/g, '');
       const parsed = parseResponse(responseText);
       display = parsed.display;
       speak = parsed.speak;
@@ -705,25 +726,40 @@ app.post('/chat', async (req, res) => {
     else {
       console.log('Using Gemini...');
       responseText = await callGemini(message);
-      const parsed = parseResponse(responseText);
-      display = parsed.display;
-      speak = parsed.speak;
 
-      // 過去会話検索タグをチェック
+      // <search>タグをチェック
       const searchMatch = responseText.match(/<search>(.+?)<\/search>/);
       if (searchMatch) {
         const keyword = searchMatch[1];
+        console.log(`Search tag detected: "${keyword}"`);
+
+        // まず過去会話を検索
         const logs = searchConversations(keyword);
 
         if (logs.length > 0) {
+          // 過去会話が見つかった場合
+          console.log('Found past conversations, using context...');
           const context = logs.map(l => `${l.role}: ${l.content}`).join('\n');
           const contextPrompt = `【過去の会話】\n${context}\n\n【現在の質問】\n${message}\n\nこれを踏まえてカナとして応答して。JSON形式で出力して：`;
           responseText = await callGemini(contextPrompt);
-          const parsed = parseResponse(responseText);
-          display = parsed.display;
-          speak = parsed.speak;
+        } else {
+          // 過去会話がない場合はGoogle検索で再試行
+          console.log('No past conversations, retrying with Google Search...');
+          responseText = await callGemini(message, true);
         }
       }
+      // 「検索します」「調べます」系の返答なら検索付きで再試行
+      else if (responseNeedsSearch(responseText)) {
+        console.log('Response indicates search intent, retrying with Google Search...');
+        responseText = await callGemini(message, true);
+      }
+
+      // <search>タグが残っていたら除去
+      responseText = responseText.replace(/<search>.+?<\/search>/g, '');
+
+      const parsed = parseResponse(responseText);
+      display = parsed.display;
+      speak = parsed.speak;
     }
 
     console.log('Kana:', display);
